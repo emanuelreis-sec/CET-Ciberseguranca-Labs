@@ -1,0 +1,71 @@
+Relatório Técnico: Implementação de Infraestrutura DNS com BIND9
+Autor: Emanuel Reis
+
+Contexto: Implementação de serviços de rede e resolução de nomes em ambiente híbrido (Linux Ubuntu e Windows Server/Client) inserido numa VPC da AWS.
+
+1. Introdução e Objetivos
+O objetivo principal deste laboratório foi a implementação, configuração e validação de um servidor DNS autoritativo utilizando o software BIND9 num sistema operativo Linux Ubuntu (máquina reis).
+
+Para simular um ambiente de produção real, o servidor DNS configurou zonas locais para uma rede de laboratório e estabeleceu um mecanismo de reencaminhamento (forwarding) para os serviços de DNS da nuvem (AWS), permitindo simultaneamente a resolução de nomes internos e o acesso à Internet para clientes Linux e Windows (wincli).
+
+2. Arquitetura e Parâmetros de Rede
+A infraestrutura do laboratório baseia-se nos seguintes parâmetros de endereçamento IP e planeamento de zonas:
+
+Servidor DNS / Linux (reis): 172.31.26.204 (Executa o BIND9, atua como autoridade para a zona local e gateway de DNS).
+
+Cliente Windows (wincli): 172.31.21.210 (Configurado para utilizar o servidor DNS do laboratório).
+
+Domínio Local: reis.lab
+
+Zonas Geridas:
+
+Zona Direta: reis.lab (Ficheiro: /etc/bind/db.reis)
+
+Zona Inversa: 31.172.in-addr.arpa (Ficheiro: /etc/bind/db.172.31)
+
+Forwarder Externo: 172.31.0.2 (AmazonProvidedDNS para resolução de endereços externos na Internet).
+
+3. Configuração do Servidor BIND9 (Passo a Passo)
+3.1. Opções Globais (named.conf.options)
+O ficheiro de opções define as regras fundamentais de segurança e comportamento do servidor BIND9:
+
+ACL (lab): Define a lista de controlo de acessos que restringe consultas e recursividade apenas à rede local e à própria máquina (127.0.0.0/8 e 172.31.0.0/16).
+
+Interfaces de Escuta: O BIND foi configurado para escutar explicitamente na porta 53 (TCP e UDP) em 127.0.0.1 e no IP privado da máquina 172.31.26.204.
+
+Forwarders: As consultas para domínios desconhecidos da zona local são reencaminhadas para o DNS da AWS (172.31.0.2).
+
+Validação DNSSEC (dnssec-validation no): Desativada temporariamente para evitar falhas de cadeia de confiança (broken trust chain) e deadlocks ao comunicar com o resolvedor da infraestrutura da Amazon.
+
+3.2. Declaração de Zonas (named.conf.local)
+Neste ficheiro indicam-se as zonas primárias geridas pelo servidor e o caminho para os respetivos ficheiros de registos:
+
+Zona direta reis.lab associada a /etc/bind/db.reis.
+
+Zona inversa 31.172.in-addr.arpa associada a /etc/bind/db.172.31.
+
+3.3. Ficheiros de Registos de Zona
+Zona Direta (db.reis): Contém os registos do tipo SOA (Start of Authority), NS (Name Server), MX (Mail Exchange) e registos A para mapear os nomes ns1, mail, reis e o cliente wincli para os respetivos endereços IP.
+
+Zona Inversa (db.172.31): Contém registos do tipo PTR para permitir a conversão de endereços IP de volta para nomes de domínio (Reverse DNS lookup).
+
+4. Configuração dos Clientes
+4.1. Servidor Linux (reis)
+Através da ferramenta Netplan, a interface de rede (ens5) foi configurada para deixar de utilizar servidores DNS externos automáticos e passar a apontar para o seu próprio endereço de loopback (127.0.0.1), aplicando o domínio de pesquisa reis.lab.
+
+4.2. Cliente Windows (wincli)
+A configuração de rede da máquina cliente foi alterada estaticamente, definindo o endereço IP do servidor Linux (172.31.26.204) como o Servidor DNS preferencial. Isto garante que todas as consultas de nomes efetuadas pelo Windows são canalizadas diretamente para o BIND9.
+
+5. Validação e Testes Práticos
+A infraestrutura foi validada através de várias ferramentas de diagnóstico:
+
+Verificação de Sintaxe e Serviços: Utilização de named-checkconf e named-checkzone para garantir a integridade dos ficheiros de configuração, juntamente com o systemctl para confirmar o estado ativo do serviço BIND9.
+
+Consultas Locais (dig): Validação de registos diretos (mail.reis.lab), registos MX, SOA e resolução inversa de IPs.
+
+Resolução a partir do Windows (Resolve-DnsName): Confirmação de que o cliente Windows obtém respostas corretas do servidor DNS do laboratório tanto para nomes internos como para a Internet (www.thunderbird.net).
+
+Navegação Web: Teste final bem-sucedido de navegação num browser no Windows (ex: acesso ao domínio sata.pt), comprovando o correto funcionamento do encaminhamento de tráfego externo.
+
+6. Conclusão
+O laboratório foi concluído com sucesso total. A implementação permitiu consolidar competências práticas na administração de serviços de diretório e resolução de nomes em sistemas Unix, compreendendo a gestão de zonas autoritativas, o papel dos registos de recursos (A, PTR, MX, SOA), a segurança baseada em ACLs e a integração bem-sucedida entre ambientes heterogéneos (Linux e Windows) numa arquitetura de rede em nuvem.
